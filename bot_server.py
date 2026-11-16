@@ -22,6 +22,9 @@ BOT_CONFIG = load_telegram_config()
 BOT_TOKEN = BOT_CONFIG.get("bot_token")
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://fxtrader-bot.onrender.com")
 
+INSTAGRAM_URL = "https://www.instagram.com/fxtrader.mts/"
+YOUTUBE_URL = "https://www.youtube.com/@fxtradermts"
+
 BUTTON_TO_SYMBOL = {
     "📊 نزدک (US100)": "US100",
     "🥇 انس طلا (Gold)": "GOLD",
@@ -40,7 +43,7 @@ def get_symbols_keyboard():
             [{"text": "📊 نزدک (US100)"}, {"text": "🥇 انس طلا (Gold)"}],
             [{"text": "📈 داوجونز (US30)"}, {"text": "📉 اس‌اندپی (US500)"}],
             [{"text": "💶 یورو/دلار (EURUSD)"}, {"text": "💷 پوند/دلار (GBPUSD)"}],
-            [{"text": "⚡ بیت‌کوین (BTCUSD)"}]
+            [{"text": "⚡ بیت‌کوین (BTCUSD)"}, {"text": "🌐 شبکه‌های اجتماعی"}]
         ],
         "resize_keyboard": True,
         "persistent": True
@@ -72,7 +75,7 @@ def send_telegram_msg(token, chat_id, text, reply_markup=None):
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "Markdown",
-        "disable_web_page_preview": True
+        "disable_web_page_preview": False
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
@@ -102,13 +105,31 @@ def handle_update(token, update):
         USER_STATE[chat_id]["step"] = "symbols"
         welcome = (
             f"سلام {user_name} عزیز! به ربات تحلیلی FX Trader MTS خوش آمدید. 💎\n\n"
-            "مستقل از متاتریدر و متصل به دیتای زنده وب و تقویم فارکس فکتوری (به وقت محلی رم).\n\n"
-            "👇 لطفاً نماد مورد نظر خود را انتخاب کنید:"
+            "مستقل از متاتریدر و متصل به سرورهای زنده چارت و تقویم رسمی فارکس فکتوری (به وقت محلی رم).\n\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "🌐 *شبکه‌های اجتماعی رسمی ما:*\n"
+            f"📸 [اینستاگرام ما]({INSTAGRAM_URL})\n"
+            f"▶️ [کانال یوتیوب ما]({YOUTUBE_URL})\n"
+            "━━━━━━━━━━━━━━━━━━━\n\n"
+            "👇 لطفاً نماد مورد نظر خود را برای دریافت تحلیل انتخاب کنید:"
         )
         send_telegram_msg(token, chat_id, welcome, reply_markup=get_symbols_keyboard())
         return
 
-    # 2. Check if a symbol button was clicked
+    # 2. Social Media button
+    if text == "🌐 شبکه‌های اجتماعی":
+        social_msg = (
+            "🌐 *کانال‌ها و شبکه‌های اجتماعی رسمی FX Trader MTS*\n\n"
+            "برای تماشای ویدیوهای تحلیلی، استراتژی‌ها و ستاپ‌های روزانه ما را دنبال کنید:\n\n"
+            f"📸 *پیج اینستاگرام:* [fxtrader.mts]({INSTAGRAM_URL})\n"
+            f"▶️ *کانال یوتیوب:* [FX Trader MTS]({YOUTUBE_URL})\n\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "👇 برای بازگشت به تحلیل‌ها، یک نماد را از کیبورد زیر انتخاب کنید:"
+        )
+        send_telegram_msg(token, chat_id, social_msg, reply_markup=get_symbols_keyboard())
+        return
+
+    # 3. Check if a symbol button was clicked
     matched_sym = None
     for btn, s in BUTTON_TO_SYMBOL.items():
         if btn == text or s.lower() in text.lower():
@@ -126,7 +147,7 @@ def handle_update(token, update):
         send_telegram_msg(token, chat_id, msg, reply_markup=get_category_keyboard())
         return
 
-    # 3. Check if Category was chosen (Technical vs Fundamental)
+    # 4. Check if Category was chosen (Technical vs Fundamental)
     current_sym = USER_STATE[chat_id].get("symbol", "US100")
     fa_name = ASSET_FA_NAMES.get(current_sym, current_sym)
     
@@ -144,14 +165,14 @@ def handle_update(token, update):
         send_telegram_msg(token, chat_id, msg, reply_markup=get_horizon_keyboard())
         return
 
-    # 4. Check Back button to previous step
+    # 5. Check Back button to previous step
     if text == "🔙 مرحله قبل":
         USER_STATE[chat_id]["step"] = "category"
         msg = f"🎯 *نماد انتخابی:* {fa_name}\n\nنوع تحلیل را انتخاب کنید:"
         send_telegram_msg(token, chat_id, msg, reply_markup=get_category_keyboard())
         return
 
-    # 5. Check Horizon selection (Daily vs Weekly)
+    # 6. Check Horizon selection (Daily vs Weekly)
     if text in ["📅 تحلیل روزانه", "📆 تحلیل هفتگی"]:
         horizon = "daily" if text == "📅 تحلیل روزانه" else "weekly"
         cat = USER_STATE[chat_id].get("category", "technical")
@@ -199,7 +220,6 @@ class CloudBotHandler(BaseHTTPRequestHandler):
             update = json.loads(post_data.decode('utf-8'))
             cfg = load_telegram_config()
             token = cfg.get("bot_token")
-            # Handle update in worker thread
             threading.Thread(target=handle_update, args=(token, update), daemon=True).start()
         except Exception as ex:
             print(f"[Webhook Error] {ex}")
@@ -208,7 +228,6 @@ class CloudBotHandler(BaseHTTPRequestHandler):
         pass
 
 def keep_alive_pinger():
-    """Pings the Render app every 9 minutes so it NEVER sleeps on the free tier."""
     time.sleep(30)
     url = f"{RENDER_URL}/"
     while True:
@@ -217,15 +236,12 @@ def keep_alive_pinger():
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Keep-alive self-ping: {r.status_code}")
         except Exception as e:
             print(f"[Keep-alive ping notice] {e}")
-        time.sleep(540) # 9 minutes
+        time.sleep(540)
 
 def start_cloud_server():
     port = int(os.environ.get("PORT", 10000))
-    
-    # 1. Start Keep-alive pinger thread
     threading.Thread(target=keep_alive_pinger, daemon=True).start()
     
-    # 2. Register Webhook with Telegram
     cfg = load_telegram_config()
     token = cfg.get("bot_token")
     if token:
@@ -240,7 +256,6 @@ def start_cloud_server():
         except Exception as e:
             print(f"Webhook setup notice: {e}")
             
-    # 3. Start HTTP Server (Blocking)
     print("=" * 60)
     print(f"FX Trader MTS Cloud Server Running on port {port}!")
     print(f"Webhook Endpoint: {RENDER_URL}/webhook")
