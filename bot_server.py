@@ -18,25 +18,9 @@ from bias_synthesizer import (
 )
 from telegram_sender import load_telegram_config
 
-# Minimal Health Server for Render Free Web Service
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain; charset=utf-8')
-        self.end_headers()
-        self.wfile.write(b"FX Trader MTS Bot is Running 24/7 on Cloud!")
-
-    def log_message(self, format, *args):
-        pass
-
-def start_health_server():
-    port = int(os.environ.get("PORT", 10000))
-    try:
-        server = HTTPServer(("0.0.0.0", port), HealthHandler)
-        print(f"Render Cloud Health check listening on port {port}...")
-        server.serve_forever()
-    except Exception as e:
-        print(f"Health server notice: {e}")
+BOT_CONFIG = load_telegram_config()
+BOT_TOKEN = BOT_CONFIG.get("bot_token")
+RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://fxtrader-bot.onrender.com")
 
 BUTTON_TO_SYMBOL = {
     "📊 نزدک (US100)": "US100",
@@ -111,7 +95,7 @@ def handle_update(token, update):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Received '{text}' from {user_name} ({chat_id})")
     
     if chat_id not in USER_STATE:
-        USER_STATE[chat_id] = {"symbol": "US100", "category": "tech", "step": "symbols"}
+        USER_STATE[chat_id] = {"symbol": "US100", "category": "technical", "step": "symbols"}
 
     # 1. Reset / Start / Symbols Menu
     if text in ["/start", "/menu", "🔙 بازگشت به لیست نمادها", "🔙 لیست نمادها"]:
@@ -193,37 +177,76 @@ def handle_update(token, update):
     fallback = "لطفاً یکی از گزینه‌های منو را انتخاب نمایید 👇"
     send_telegram_msg(token, chat_id, fallback, reply_markup=get_symbols_keyboard())
 
-def run_bot_listener():
-    # Start health server thread for Render Web Service
-    t = threading.Thread(target=start_health_server, daemon=True)
-    t.start()
-    
-    cfg = load_telegram_config()
-    token = cfg.get("bot_token")
-    if not token:
-        print("Bot token not found in config!")
-        return
+# HTTP Handler with Webhook & Health check
+class CloudBotHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(b"FX Trader MTS Bot is Running 24/7 on Cloud!")
 
-    print("=" * 60)
-    print("FX Trader MTS Bot Server Running (Ready for Cloud & Local)!")
-    print("Supports: Technical/Fundamental x Daily/Weekly x Rome Time")
-    print("=" * 60)
+    def do_POST(self):
+        # Webhook handler
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"OK")
+        
+        try:
+            update = json.loads(post_data.decode('utf-8'))
+            cfg = load_telegram_config()
+            token = cfg.get("bot_token")
+            # Handle update in worker thread
+            threading.Thread(target=handle_update, args=(token, update), daemon=True).start()
+        except Exception as ex:
+            print(f"[Webhook Error] {ex}")
 
-    offset = 0
+    def log_message(self, format, *args):
+        pass
+
+def keep_alive_pinger():
+    """Pings the Render app every 9 minutes so it NEVER sleeps on the free tier."""
+    time.sleep(30)
+    url = f"{RENDER_URL}/"
     while True:
         try:
-            url = f"https://api.telegram.org/bot{token}/getUpdates"
-            params = {"offset": offset, "timeout": 25}
-            res = requests.get(url, params=params, timeout=30)
-            
-            if res.status_code == 200:
-                data = res.json()
-                for upd in data.get("result", []):
-                    offset = upd["update_id"] + 1
-                    handle_update(token, upd)
-            time.sleep(1)
+            r = requests.get(url, timeout=15)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Keep-alive self-ping: {r.status_code}")
         except Exception as e:
-            time.sleep(3)
+            print(f"[Keep-alive ping notice] {e}")
+        time.sleep(540) # 9 minutes
+
+def start_cloud_server():
+    port = int(os.environ.get("PORT", 10000))
+    
+    # 1. Start Keep-alive pinger thread
+    threading.Thread(target=keep_alive_pinger, daemon=True).start()
+    
+    # 2. Register Webhook with Telegram
+    cfg = load_telegram_config()
+    token = cfg.get("bot_token")
+    if token:
+        webhook_url = f"{RENDER_URL}/webhook"
+        try:
+            set_res = requests.post(
+                f"https://api.telegram.org/bot{token}/setWebhook",
+                json={"url": webhook_url, "drop_pending_updates": False},
+                timeout=15
+            ).json()
+            print(f"Telegram Webhook Registration: {set_res}")
+        except Exception as e:
+            print(f"Webhook setup notice: {e}")
+            
+    # 3. Start HTTP Server (Blocking)
+    print("=" * 60)
+    print(f"FX Trader MTS Cloud Server Running on port {port}!")
+    print(f"Webhook Endpoint: {RENDER_URL}/webhook")
+    print("=" * 60)
+    server = HTTPServer(("0.0.0.0", port), CloudBotHandler)
+    server.serve_forever()
 
 if __name__ == "__main__":
-    run_bot_listener()
+    start_cloud_server()
