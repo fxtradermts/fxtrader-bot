@@ -23,7 +23,7 @@ BOT_TOKEN = BOT_CONFIG.get("bot_token")
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://fxtrader-bot.onrender.com")
 
 INSTAGRAM_URL = "https://www.instagram.com/fxtrader.mts/"
-YOUTUBE_URL = "https://www.youtube.com/@fxtradermts"
+YOUTUBE_URL = "https://youtube.com/@fxtradermts4090?si=rStUynseAuV50Zde"
 
 BUTTON_TO_SYMBOL = {
     "📊 نزدک (US100)": "US100",
@@ -105,10 +105,10 @@ def handle_update(token, update):
         USER_STATE[chat_id]["step"] = "symbols"
         welcome = (
             f"سلام {user_name} عزیز! به ربات تحلیلی FX Trader MTS خوش آمدید. 💎\n\n"
-            "مستقل از متاتریدر و متصل به سرورهای زنده چارت و تقویم رسمی فارکس فکتوری (به وقت محلی رم).\n\n"
+            "مرجع تخصصی تحلیل ساختار بازار، سطوح نقدینگی و رویدادهای تقویم اقتصادی فارکس فکتوری (به وقت محلی رم/ایتالیا).\n\n"
             "━━━━━━━━━━━━━━━━━━━\n"
             "🌐 *شبکه‌های اجتماعی رسمی ما:*\n"
-            f"📸 [اینستاگرام ما]({INSTAGRAM_URL})\n"
+            f"📸 [پیج اینستاگرام ما]({INSTAGRAM_URL})\n"
             f"▶️ [کانال یوتیوب ما]({YOUTUBE_URL})\n"
             "━━━━━━━━━━━━━━━━━━━\n\n"
             "👇 لطفاً نماد مورد نظر خود را برای دریافت تحلیل انتخاب کنید:"
@@ -207,7 +207,6 @@ class CloudBotHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"FX Trader MTS Bot is Running 24/7 on Cloud!")
 
     def do_POST(self):
-        # Webhook handler
         content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length)
         
